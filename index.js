@@ -1,56 +1,99 @@
 const express = require('express');
 const cors = require('cors');
+const multer = require('multer');
+const path = require('path');
 require('dotenv').config();
 const { MongoClient, ServerApiVersion } = require('mongodb');
 
 const app = express();
 const port = process.env.PORT || 5000;
 
+const fs = require('fs');
 
+// Ensure the 'uploads' directory exists
+const uploadDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir);
+  console.log('Created "uploads" directory.');
+}
+
+
+// MongoDB connection
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.yzf7x.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
     strict: true,
     deprecationErrors: true,
-  }
+  },
 });
 
+// Middleware
+app.use(cors());
+app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'))); // Serve uploaded files statically
+
+// Multer setup for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, 'uploads/');
+  },
+  filename: (req, file, cb) => {
+    cb(null, `${Date.now()}-${file.originalname}`);
+  },
+});
+const upload = multer({ storage });
+
+// Main function
 async function run() {
   try {
-    // Connect the client to the server	(optional starting in v4.7)
+    // Connect to MongoDB
     await client.connect();
-    // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+    await client.db('admin').command({ ping: 1 });
+    console.log('Connected to MongoDB successfully!');
 
-    const userCollection = client.db('userDB').collection('user')
+    const userCollection = client.db('userDB').collection('user');
 
-    app.post('/user', async(req, res)=>{
-        const newUser = req.body;
-        console.log(newUser);
-        const result = await userCollection.insertOne(newUser)
-        res.send(result)
-      })
+    // Endpoint for form submission
+    app.post('/user', upload.single('sscCertificate'), async (req, res) => {
+      try {
+        const { fullName, email, phone, course, message } = req.body;
+        const sscCertificatePath = req.file?.path;
 
+        if (!sscCertificatePath) {
+          return res.status(400).send({ error: 'SSC certificate upload is required.' });
+        }
+
+        const newUser = {
+          fullName,
+          email,
+          phone,
+          course,
+          message,
+          sscCertificate: sscCertificatePath, // Store the file path in MongoDB
+        };
+
+        const result = await userCollection.insertOne(newUser);
+        res.send(result);
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ error: 'Failed to submit the form.' });
+      }
+    });
   } finally {
-    // Ensures that the client will close when you finish/error
+    // Optionally close the client when the server stops
     // await client.close();
   }
 }
 run().catch(console.dir);
 
+// Root endpoint
+app.get('/', (req, res) => {
+  res.send('Server is running');
+});
 
-// middleware
-app.use(cors());
-app.use(express.json());
-
-app.get('/', (req, res) =>{
-    res.send('server is running')
-})
-
-app.listen(port, ()=>{
-    console.log(`server is running on: ${port}`);
-})
+// Start the server
+app.listen(port, () => {
+  console.log(`Server is running on port: ${port}`);
+});
