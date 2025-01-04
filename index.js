@@ -17,6 +17,9 @@ if (!fs.existsSync(uploadDir)) {
   console.log('Created "uploads" directory.');
 }
 
+// Serve static files from the 'uploads' directory
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 
 // MongoDB connection
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.yzf7x.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
@@ -81,6 +84,22 @@ async function run() {
         res.status(500).send({ error: 'Failed to submit the form.' });
       }
     });
+
+    app.get('/user', async (req, res) => {
+      const email = req.query.email;
+      if (!email) {
+        return res.status(400).send({ error: "Email is required" });
+      }
+    
+      const user = await userCollection.findOne({ email });
+      if (user) {
+        res.send(user);
+      } else {
+        res.status(404).send({ error: "User not found" });
+      }
+    });
+    
+    
   } finally {
     // Optionally close the client when the server stops
     // await client.close();
